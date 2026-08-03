@@ -6,22 +6,20 @@ tees the JSON response.
 
 ## What it is
 
-A Chrome extension that turns the X tab you're already logged into a free, keyless X
-read API. When you search or scroll, X's own JavaScript calls its internal GraphQL
-backend; the extension reads those response bodies off the wire and exports them to
-JSONL/markdown. You never authenticate to anything — the auth is your existing session
-cookie.
+A Chrome extension that turns the X tab you're already logged into a local export tool.
+When you search or scroll, X's own JavaScript calls its internal GraphQL backend and
+renders the JSON; the extension reads those response bodies in the page and exports them
+to JSONL/markdown. You never authenticate to anything — it runs inside the tab you
+already signed into.
 
 ## Why that matters
 
-Reading X's own response — instead of paying for a key, forging requests, or parsing
-HTML — is the one property that separates it from every other category of tool:
+Reading X's own response — instead of forging requests or parsing rendered HTML — is the
+one property that separates it from a DOM scraper:
 
 | Compared to | They do | This does instead |
 |---|---|---|
-| **X's paid API** ($100–$42k/mo, keyed) | Authorized machine access, rate-tiered, firehose/full-archive | Same search + timeline data, no key, no bill — bounded to your session's view, at browsing speed |
 | **DOM scrapers / Nitter** | Parse rendered HTML; race the paint; break on redesigns; third-party server or shared IP → bans | Reads structured JSON X itself fetched — gets `followers/blue/views/quotes` the DOM hides; survives UI redesigns; your own session, no shared IP |
-| **API-God / api-god-x** (the CLIs) | Drive a separate Playwright browser; must capture + store your login (`auth_token/ct0/twid`) to `~/.x-session/` | No Playwright, no stored session file — it lives inside the logged-in tab, so the auth is just there. Stripped the memecoin engine + ingestion daemon |
 
 ## How it works
 
@@ -57,7 +55,7 @@ Runs under your own account and session, over your own view — the same posts t
 already showed you. No firehose, no full-archive, no key: it's bounded to what your
 session can see, at browsing speed. Automated/bulk access to X's internal endpoints can
 violate X's terms and risk the account; that call is the operator's. Capture and export
-only — no ingestion daemon, no signal engine, no network calls of its own.
+only — it makes no network calls of its own.
 
 ## License
 
