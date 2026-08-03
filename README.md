@@ -53,9 +53,9 @@ verified, views, quotes, lang, is_retweet, source`.
 
 ### Autoscroll (optional, off by default)
 
-Flip **Autoscroll: ON** and the panel jumps to the bottom of the page a few times a second
-so X keeps loading the next page — fast, like holding Page Down. The extension still
-fetches nothing itself. Set a **minutes** value next to the toggle to stop after a fixed
+Flip **Autoscroll: ON** and the panel jumps to the bottom of the page about once a second
+so X keeps loading the next page — each hit pulls in a whole page of posts. The extension
+still fetches nothing itself. Set a **minutes** value next to the toggle to stop after a fixed
 time (a live countdown shows in the panel); leave it blank to run until the timeline runs
 dry. Either way it stops on its own once no new posts arrive. Leaving it running is
 automated pagination; whether that fits your use of X is the operator's call (see

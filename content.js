@@ -174,10 +174,12 @@
     return s >= 60 ? Math.floor(s / 60) + 'm' + String(s % 60).padStart(2, '0') + 's' : s + 's';
   }
   // Autoscroll assists pagination: X only fetches the next page once you reach the bottom,
-  // so each tick jumps straight to the bottom to trip its loader — fast, like holding Page
-  // Down. The extension itself still fetches nothing. OFF by default; stops on whichever
+  // so each tick jumps straight to the bottom to trip its loader. It fires about once a
+  // second — each hit loads a whole page (~20 posts), so throughput stays high while
+  // staying easy on X's rate limits (firing faster just spams scrolls mid-fetch and trips
+  // them). The extension itself still fetches nothing. OFF by default; stops on whichever
   // comes first: the timer you set (blank = none) or an idle stretch with no new posts.
-  const AUTO_MS = 350, AUTO_IDLE_MAX = 24;   // ~3 ticks/sec; ~8s of no growth = stop
+  const AUTO_MS = 900, AUTO_IDLE_MAX = 10;   // ~1 tick/sec; ~9s of no growth = stop
   function autoTick() {
     const el = document.scrollingElement || document.documentElement;
     window.scrollTo(0, el.scrollHeight);     // slam to the bottom → triggers X's loader
