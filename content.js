@@ -173,14 +173,16 @@
     const s = Math.max(0, Math.round((autoDeadline - Date.now()) / 1000));
     return s >= 60 ? Math.floor(s / 60) + 'm' + String(s % 60).padStart(2, '0') + 's' : s + 's';
   }
-  // Autoscroll assists pagination: it scrolls the page you're already on so X loads the
-  // next page itself — the extension never fetches anything. Human-paced (1.8s/tick) and
-  // OFF by default. It stops on whichever comes first: the timer you set (blank = none),
-  // or an idle stretch with no new posts — so it never hammers an exhausted timeline.
+  // Autoscroll assists pagination: X only fetches the next page once you reach the bottom,
+  // so each tick jumps straight to the bottom to trip its loader — fast, like holding Page
+  // Down. The extension itself still fetches nothing. OFF by default; stops on whichever
+  // comes first: the timer you set (blank = none) or an idle stretch with no new posts.
+  const AUTO_MS = 350, AUTO_IDLE_MAX = 24;   // ~3 ticks/sec; ~8s of no growth = stop
   function autoTick() {
-    window.scrollBy(0, Math.round(window.innerHeight * 0.9));
+    const el = document.scrollingElement || document.documentElement;
+    window.scrollTo(0, el.scrollHeight);     // slam to the bottom → triggers X's loader
     if (tweets.size > autoLastSize) { autoLastSize = tweets.size; autoIdle = 0; }
-    else if (++autoIdle >= 6) { return stopAuto('autoscroll stopped — no new posts'); }
+    else if (++autoIdle >= AUTO_IDLE_MAX) { return stopAuto('autoscroll stopped — no new posts'); }
     if (autoDeadline && Date.now() >= autoDeadline) { return stopAuto('autoscroll stopped — timer done'); }
     if (autoDeadline) status(`autoscroll · ${fmtLeft()} left · ${tweets.size} posts`);
   }
@@ -189,7 +191,8 @@
     autoLastSize = tweets.size; autoIdle = 0;
     const mins = parseFloat(autoMins);
     autoDeadline = (mins > 0) ? Date.now() + mins * 60000 : 0;
-    autoTimer = setInterval(autoTick, 1800);
+    autoTick();                              // fire immediately, no initial delay
+    autoTimer = setInterval(autoTick, AUTO_MS);
     updateAutoBtn(true);
     status(autoDeadline ? `autoscroll · ${fmtLeft()} left` : 'autoscroll on — capturing');
   }
