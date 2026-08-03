@@ -55,8 +55,10 @@ verified, views, quotes, lang, is_retweet, source`.
 
 Flip **Autoscroll: ON** and the panel scrolls the page for you so X keeps loading the
 next page — the extension still fetches nothing itself. It is paced like manual browsing
-(~one screen every 1.8s) and stops on its own once no new posts arrive. Leaving it running
-is automated pagination; whether that fits your use of X is the operator's call (see
+(~one screen every 1.8s). Set a **minutes** value next to the toggle to stop after a fixed
+time (a live countdown shows in the panel); leave it blank to run until the timeline runs
+dry. Either way it stops on its own once no new posts arrive. Leaving it running is
+automated pagination; whether that fits your use of X is the operator's call (see
 **Scope**).
 
 ## Scope

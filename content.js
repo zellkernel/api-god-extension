@@ -162,30 +162,40 @@
 
   // ---------- UI ----------
   let panel = null;
-  let autoTimer = null, autoLastSize = 0, autoIdle = 0;
+  let autoTimer = null, autoLastSize = 0, autoIdle = 0, autoDeadline = 0, autoMins = '';
   function status(msg) { const s = panel && panel.querySelector('#ag-stat'); if (s) s.textContent = msg; }
   function updateAutoBtn(on) {
     const b = panel && panel.querySelector('#ag-auto'); if (!b) return;
     b.textContent = 'Autoscroll: ' + (on ? 'ON' : 'OFF');
     b.style.background = on ? '#00ba7c' : '#38444d';
   }
+  function fmtLeft() {
+    const s = Math.max(0, Math.round((autoDeadline - Date.now()) / 1000));
+    return s >= 60 ? Math.floor(s / 60) + 'm' + String(s % 60).padStart(2, '0') + 's' : s + 's';
+  }
   // Autoscroll assists pagination: it scrolls the page you're already on so X loads the
-  // next page itself — the extension never fetches anything. Human-paced (1.8s/tick),
-  // OFF by default, and auto-stops once no new posts have arrived for a while, so it
-  // never hammers an exhausted timeline.
+  // next page itself — the extension never fetches anything. Human-paced (1.8s/tick) and
+  // OFF by default. It stops on whichever comes first: the timer you set (blank = none),
+  // or an idle stretch with no new posts — so it never hammers an exhausted timeline.
   function autoTick() {
     window.scrollBy(0, Math.round(window.innerHeight * 0.9));
     if (tweets.size > autoLastSize) { autoLastSize = tweets.size; autoIdle = 0; }
-    else if (++autoIdle >= 6) { stopAuto('autoscroll stopped — no new posts'); }
+    else if (++autoIdle >= 6) { return stopAuto('autoscroll stopped — no new posts'); }
+    if (autoDeadline && Date.now() >= autoDeadline) { return stopAuto('autoscroll stopped — timer done'); }
+    if (autoDeadline) status(`autoscroll · ${fmtLeft()} left · ${tweets.size} posts`);
   }
   function startAuto() {
     if (autoTimer) return;
     autoLastSize = tweets.size; autoIdle = 0;
+    const mins = parseFloat(autoMins);
+    autoDeadline = (mins > 0) ? Date.now() + mins * 60000 : 0;
     autoTimer = setInterval(autoTick, 1800);
-    updateAutoBtn(true); status('autoscroll on — capturing');
+    updateAutoBtn(true);
+    status(autoDeadline ? `autoscroll · ${fmtLeft()} left` : 'autoscroll on — capturing');
   }
   function stopAuto(msg) {
     if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    autoDeadline = 0;
     updateAutoBtn(false); if (msg) status(msg);
   }
   function renderPreview() {
@@ -221,7 +231,13 @@
       '<b style="font-weight:700">API-God</b>' +
       '<span style="margin-left:auto;color:#8899a6;font-size:11px"><b id="ag-count">0</b> posts</span></div>' +
       '<div id="ag-stat" style="color:#8899a6;margin-bottom:8px">scroll to capture · <span id="ag-cap">0</span> responses</div>' +
-      '<button id="ag-auto" style="width:100%;margin-bottom:6px">Autoscroll: OFF</button>' +
+      '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">' +
+      '<button id="ag-auto" style="flex:1">Autoscroll: OFF</button>' +
+      '<input id="ag-timer" type="number" min="0" step="1" placeholder="∞" ' +
+      'title="minutes to run, then stop (blank = until idle)" ' +
+      'style="width:42px;background:#0f151a;color:#e7e9ea;border:1px solid #38444d;' +
+      'border-radius:8px;padding:5px 6px;font:11px system-ui;text-align:center">' +
+      '<span style="color:#8899a6;font-size:10px">min</span></div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
       '<button id="ag-jsonl">JSONL</button><button id="ag-csv">CSV</button>' +
       '<button id="ag-md">Markdown</button><button id="ag-copy">Copy</button>' +
@@ -237,6 +253,9 @@
     p.querySelector('#ag-md').onclick = () => { if (!tweets.size) return status('nothing captured yet'); download(toMarkdown(), 'md'); status(`saved ${tweets.size} → md`); };
     p.querySelector('#ag-copy').onclick = async () => { if (!tweets.size) return status('nothing captured yet'); await navigator.clipboard.writeText(toJSONL()); status(`copied ${tweets.size}`); };
     p.querySelector('#ag-auto').onclick = () => { autoTimer ? stopAuto('autoscroll off') : startAuto(); };
+    const ti = p.querySelector('#ag-timer');
+    ti.value = autoMins;                       // restore across SPA panel rebuilds
+    ti.oninput = () => { autoMins = ti.value; };
     p.querySelector('#ag-preview-btn').onclick = () => { const pv = panel.querySelector('#ag-preview'); pv.style.display = pv.style.display === 'none' ? 'block' : 'none'; renderPreview(); };
     p.querySelector('#ag-clear').onclick = () => { stopAuto(); tweets.clear(); captures = 0; autoLastSize = 0; render(); status('cleared'); };
     updateAutoBtn(!!autoTimer);
