@@ -6,7 +6,7 @@ tees the JSON response.
 
 ## What it is
 
-A Chrome extension that turns the X tab you're already logged into a local export tool.
+A Chrome extension that turns your already-logged-in X tab into a local export tool.
 When you search or scroll, X's own JavaScript calls its internal GraphQL backend and
 renders the JSON; the extension reads those response bodies in the page and exports them
 to JSONL/markdown. You never authenticate to anything — it runs inside the tab you
@@ -19,7 +19,7 @@ one property that separates it from a DOM scraper:
 
 | Compared to | They do | This does instead |
 |---|---|---|
-| **DOM scrapers / Nitter** | Parse rendered HTML; race the paint; break on redesigns; third-party server or shared IP → bans | Reads structured JSON X itself fetched — gets `followers/blue/views/quotes` the DOM hides; survives UI redesigns; your own session, no shared IP |
+| **DOM scrapers / Nitter** | Parse rendered HTML; race the paint; break on UI redesigns; run on a third-party server | Reads the structured JSON X itself fetched — captures `followers / blue / views / quotes` the rendered page omits; survives UI redesigns; stays inside your own session |
 
 ## How it works
 
@@ -35,9 +35,9 @@ X's JS fires SearchTimeline ─► patched fetch/XHR tees the response ─► pa
   GraphQL **response bodies** — MV3 removed blocking-`webRequest` body access, so this is
   how you read them. It never forges a request; X makes the authenticated call, the
   extension reads the result.
-- `content.js` (isolated world) parses X's timeline JSON into flat records (parser ported
-  from and parity-tested byte-for-byte against [api-god-x](https://github.com/zellkernel/api-god-x)),
-  dedupes by tweet id, and exports.
+- `content.js` (isolated world) parses X's timeline JSON into flat records (parser
+  parity-tested byte-for-byte against a reference implementation), dedupes by tweet id,
+  and exports.
 
 Per record: `id, handle, name, text, time, url, likes, replies, reposts, followers, blue,
 verified, views, quotes, lang, is_retweet, source`.
