@@ -9,8 +9,8 @@ tees the JSON response.
 A Chrome extension that turns your already-logged-in X tab into a local export tool.
 When you search or scroll, X's own JavaScript calls its internal GraphQL backend and
 renders the JSON; the extension reads those response bodies in the page and exports them
-to JSONL/markdown. You never authenticate to anything — it runs inside the tab you
-already signed into.
+to JSONL, CSV, or markdown. You never authenticate to anything — it runs inside the tab
+you already signed into.
 
 ## Why that matters
 
@@ -28,7 +28,7 @@ X is a single-page app — open a search or profile and it runs a GraphQL query
 renders the JSON. The extension reads the answer to a request the page makes anyway:
 
 ```
-X's JS fires SearchTimeline ─► patched fetch/XHR tees the response ─► parse ─► JSONL / markdown
+X's JS fires SearchTimeline ─► patched fetch/XHR tees the response ─► parse ─► JSONL / CSV / markdown
 ```
 
 - `inject.js` (page main world) patches `window.fetch` + `XMLHttpRequest` to tee the
@@ -47,7 +47,17 @@ verified, views, quotes, lang, is_retweet, source`.
 1. `chrome://extensions` → enable **Developer mode**
 2. **Load unpacked** → select this folder
 3. Open [x.com](https://x.com) logged in — an **API-God** panel appears bottom-right
-4. Search or scroll; the counter climbs as responses land. Click **JSONL**, **Markdown**, or **Copy JSONL**.
+4. Search or scroll; the counter climbs as responses land. **Preview** shows what's
+   captured so far. Save with **JSONL**, **CSV**, or **Markdown**, or **Copy** the JSONL
+   to the clipboard.
+
+### Autoscroll (optional, off by default)
+
+Flip **Autoscroll: ON** and the panel scrolls the page for you so X keeps loading the
+next page — the extension still fetches nothing itself. It is paced like manual browsing
+(~one screen every 1.8s) and stops on its own once no new posts arrive. Leaving it running
+is automated pagination; whether that fits your use of X is the operator's call (see
+**Scope**).
 
 ## Scope
 

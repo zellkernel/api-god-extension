@@ -141,6 +141,13 @@
       (r.views ? ` · 👁 ${r.views.toLocaleString()}` : '')
     ).join('\n\n---\n\n') + '\n';
   }
+  function csvCell(v) { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  function toCSV() {
+    const cols = ['id','handle','name','text','time','url','likes','replies','reposts','followers','blue','verified','views','quotes','lang','is_retweet','source'];
+    return cols.join(',') + '\n' +
+      records().map((r) => cols.map((c) => csvCell(Array.isArray(r[c]) ? r[c].join('|') : r[c])).join(',')).join('\n') + '\n';
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
   function slugContext() {
     const p = location.pathname.replace(/^\/+|\/+$/g, '').replace(/\//g, '-') || 'home';
     const q = new URLSearchParams(location.search).get('q');
@@ -155,11 +162,50 @@
 
   // ---------- UI ----------
   let panel = null;
+  let autoTimer = null, autoLastSize = 0, autoIdle = 0;
   function status(msg) { const s = panel && panel.querySelector('#ag-stat'); if (s) s.textContent = msg; }
+  function updateAutoBtn(on) {
+    const b = panel && panel.querySelector('#ag-auto'); if (!b) return;
+    b.textContent = 'Autoscroll: ' + (on ? 'ON' : 'OFF');
+    b.style.background = on ? '#00ba7c' : '#38444d';
+  }
+  // Autoscroll assists pagination: it scrolls the page you're already on so X loads the
+  // next page itself — the extension never fetches anything. Human-paced (1.8s/tick),
+  // OFF by default, and auto-stops once no new posts have arrived for a while, so it
+  // never hammers an exhausted timeline.
+  function autoTick() {
+    window.scrollBy(0, Math.round(window.innerHeight * 0.9));
+    if (tweets.size > autoLastSize) { autoLastSize = tweets.size; autoIdle = 0; }
+    else if (++autoIdle >= 6) { stopAuto('autoscroll stopped — no new posts'); }
+  }
+  function startAuto() {
+    if (autoTimer) return;
+    autoLastSize = tweets.size; autoIdle = 0;
+    autoTimer = setInterval(autoTick, 1800);
+    updateAutoBtn(true); status('autoscroll on — capturing');
+  }
+  function stopAuto(msg) {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    updateAutoBtn(false); if (msg) status(msg);
+  }
+  function renderPreview() {
+    const pv = panel && panel.querySelector('#ag-preview');
+    if (!pv || pv.style.display === 'none') return;
+    const rs = records().slice(-15).reverse();
+    pv.innerHTML = rs.length
+      ? rs.map((r) =>
+          '<div style="padding:4px 0;border-top:1px solid #22303c">' +
+          '<b>' + esc(r.handle) + '</b> ' +
+          '<span style="color:#8899a6">' + (r.likes || 0).toLocaleString() + '♥</span><br>' +
+          '<span style="color:#c9d3da">' + esc(r.text).slice(0, 100) + '</span></div>'
+        ).join('')
+      : '<div style="color:#8899a6;padding:4px 0">nothing captured yet</div>';
+  }
   function render() {
     if (!panel) return;
     panel.querySelector('#ag-count').textContent = tweets.size;
     panel.querySelector('#ag-cap').textContent = captures;
+    renderPreview();
   }
   function build() {
     if (document.getElementById('apigod-panel')) return;
@@ -168,25 +214,32 @@
     p.style.cssText =
       'position:fixed;bottom:16px;right:16px;z-index:2147483647;font:12px/1.4 system-ui,sans-serif;' +
       'background:#15202b;color:#e7e9ea;border:1px solid #38444d;border-radius:14px;padding:10px 12px;' +
-      'box-shadow:0 6px 24px rgba(0,0,0,.5);width:210px';
+      'box-shadow:0 6px 24px rgba(0,0,0,.5);width:230px';
     p.innerHTML =
       '<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">' +
       '<span style="width:9px;height:9px;border-radius:50%;background:#1d9bf0;display:inline-block"></span>' +
       '<b style="font-weight:700">API-God</b>' +
       '<span style="margin-left:auto;color:#8899a6;font-size:11px"><b id="ag-count">0</b> posts</span></div>' +
       '<div id="ag-stat" style="color:#8899a6;margin-bottom:8px">scroll to capture · <span id="ag-cap">0</span> responses</div>' +
+      '<button id="ag-auto" style="width:100%;margin-bottom:6px">Autoscroll: OFF</button>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
-      '<button id="ag-jsonl">JSONL</button><button id="ag-md">Markdown</button>' +
-      '<button id="ag-copy">Copy JSONL</button><button id="ag-clear">Clear</button></div>';
+      '<button id="ag-jsonl">JSONL</button><button id="ag-csv">CSV</button>' +
+      '<button id="ag-md">Markdown</button><button id="ag-copy">Copy</button>' +
+      '<button id="ag-preview-btn">Preview</button><button id="ag-clear">Clear</button></div>' +
+      '<div id="ag-preview" style="display:none;margin-top:8px;max-height:170px;overflow:auto"></div>';
     p.querySelectorAll('button').forEach((b) => (b.style.cssText =
       'background:#1d9bf0;color:#fff;border:0;border-radius:9999px;padding:6px 8px;cursor:pointer;font:11px system-ui;font-weight:700'));
     p.querySelector('#ag-clear').style.background = '#38444d';
     document.documentElement.appendChild(p);
     panel = p;
     p.querySelector('#ag-jsonl').onclick = () => { if (!tweets.size) return status('nothing captured yet'); download(toJSONL(), 'jsonl'); status(`saved ${tweets.size} → jsonl`); };
+    p.querySelector('#ag-csv').onclick = () => { if (!tweets.size) return status('nothing captured yet'); download(toCSV(), 'csv'); status(`saved ${tweets.size} → csv`); };
     p.querySelector('#ag-md').onclick = () => { if (!tweets.size) return status('nothing captured yet'); download(toMarkdown(), 'md'); status(`saved ${tweets.size} → md`); };
     p.querySelector('#ag-copy').onclick = async () => { if (!tweets.size) return status('nothing captured yet'); await navigator.clipboard.writeText(toJSONL()); status(`copied ${tweets.size}`); };
-    p.querySelector('#ag-clear').onclick = () => { tweets.clear(); captures = 0; render(); status('cleared'); };
+    p.querySelector('#ag-auto').onclick = () => { autoTimer ? stopAuto('autoscroll off') : startAuto(); };
+    p.querySelector('#ag-preview-btn').onclick = () => { const pv = panel.querySelector('#ag-preview'); pv.style.display = pv.style.display === 'none' ? 'block' : 'none'; renderPreview(); };
+    p.querySelector('#ag-clear').onclick = () => { stopAuto(); tweets.clear(); captures = 0; autoLastSize = 0; render(); status('cleared'); };
+    updateAutoBtn(!!autoTimer);
     render();
   }
   build();
