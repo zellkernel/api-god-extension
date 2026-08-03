@@ -81,6 +81,14 @@ extra permission) so they survive the reloads; the run is discarded on **Stop pa
 **Clear**, or closing the tab. Like autoscroll, a parlay is automated pagination — the
 operator's call (see **Scope**).
 
+## Screenshots
+
+![Panel capturing an X search timeline](store/screenshot-1-panel.png)
+
+![Preview pane with filter and Go-X search](store/screenshot-2-preview.png)
+
+Web Store listing assets (1280×800 screenshots + 128×128 icon) live in [`store/`](store/).
+
 ## Scope
 
 Runs under your own account and session, over your own view — the same posts the page
