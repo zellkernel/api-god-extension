@@ -22,9 +22,13 @@ same data the page renders for you. It formats that content so you can save or c
 - It does **not** store your X login, cookies, or session tokens. It relies on the
   session you are already logged into; it keeps no copy.
 - Exports are written by your browser directly to your local disk (a normal file
-  download) or copied to your clipboard when you choose. Captured content is held only
-  in the page's memory during your session and is discarded when you close or reload the
-  tab, or press "Clear".
+  download) or copied to your clipboard when you choose. Captured content is held in the
+  page's memory during your session. When you run a **Parlay** (a chain of searches that
+  reloads the page between legs), the captured set and the run plan are also kept in the
+  page's own `sessionStorage` so they survive those reloads — this is a standard web-page
+  API scoped to x.com, held on your device only, and it is **not** the browser "storage"
+  permission (no such permission is requested; see below). All of it is discarded when you
+  close the tab, or press "Clear" or "Stop parlay".
 
 ## Permissions
 

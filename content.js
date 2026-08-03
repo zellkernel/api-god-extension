@@ -162,7 +162,9 @@
 
   // ---------- UI ----------
   let panel = null;
-  let autoTimer = null, autoLastSize = 0, autoIdle = 0, autoDeadline = 0, autoMins = '';
+  let autoTimer = null, autoLastSize = 0, autoIdle = 0, autoDeadline = 0, autoMins = '', pvFilter = '';
+  let parlayLegs = [{ q: '', mins: '' }], parlayTimer = null, parlayActive = false;
+  const PKEY = 'apigod_parlay', RKEY = 'apigod_parlay_recs';   // sessionStorage keys (x.com origin)
   function status(msg) { const s = panel && panel.querySelector('#ag-stat'); if (s) s.textContent = msg; }
   function updateAutoBtn(on) {
     const b = panel && panel.querySelector('#ag-auto'); if (!b) return;
@@ -203,18 +205,142 @@
     autoDeadline = 0;
     updateAutoBtn(false); if (msg) status(msg);
   }
+  // Type a query, run it on X. A full navigation (not SPA nav) is deliberate: it reloads
+  // the page so inject.js re-patches fetch at document_start before X's bundle captures
+  // its own fetch reference — the cleanest capture path. Default tab is Top (cached,
+  // robust); flip to Latest in X's own UI if you want chronological.
+  function runOnX(q) {
+    q = (q || '').trim();
+    if (!q) return status('type a search first');
+    status('searching X: ' + q.slice(0, 28));
+    location.href = 'https://x.com/search?q=' + encodeURIComponent(q) + '&src=typed_query';
+  }
+  // Repaints ONLY the list node — the search input is built once and left alone, so
+  // typing and scroll survive incoming captures. Live-filters on handle/name/text.
   function renderPreview() {
     const pv = panel && panel.querySelector('#ag-preview');
     if (!pv || pv.style.display === 'none') return;
-    const rs = records().slice(-15).reverse();
-    pv.innerHTML = rs.length
-      ? rs.map((r) =>
+    const list = pv.querySelector('#ag-pv-list');
+    const cnt = pv.querySelector('#ag-pv-count');
+    if (!list) return;
+    const f = pvFilter.trim().toLowerCase();
+    const all = records();
+    const matched = f
+      ? all.filter((r) => (r.handle + ' ' + r.name + ' ' + r.text).toLowerCase().includes(f))
+      : all;
+    const shown = matched.slice(-50).reverse();
+    if (cnt) cnt.textContent = all.length
+      ? (f ? matched.length + ' of ' + all.length + ' match' : 'showing ' + shown.length + ' of ' + all.length)
+      : '';
+    list.innerHTML = shown.length
+      ? shown.map((r) =>
           '<div style="padding:4px 0;border-top:1px solid #22303c">' +
           '<b>' + esc(r.handle) + '</b> ' +
           '<span style="color:#8899a6">' + (r.likes || 0).toLocaleString() + '♥</span><br>' +
-          '<span style="color:#c9d3da">' + esc(r.text).slice(0, 100) + '</span></div>'
+          '<span style="color:#c9d3da">' + esc(r.text).slice(0, 140) + '</span></div>'
         ).join('')
-      : '<div style="color:#8899a6;padding:4px 0">nothing captured yet</div>';
+      : '<div style="color:#8899a6;padding:4px 0">' +
+        (all.length ? 'no matches — press Go X to search X for it' : 'nothing captured yet') + '</div>';
+  }
+  // ---------- Parlay: a chain of {search term, minutes} legs run back-to-back ----------
+  // Each leg navigates X to its search and autoscrolls for its duration, capturing into
+  // the shared deduped set. Because every leg is a full page load (see runOnX), the plan
+  // and the captured records are parked in the page's sessionStorage so they survive the
+  // reloads; resumeParlay() picks the chain back up on the next load. No extra permission:
+  // sessionStorage is the x.com origin's own store, local-only, cleared when the tab closes.
+  function loadPlan() { try { return JSON.parse(sessionStorage.getItem(PKEY) || 'null'); } catch (_) { return null; } }
+  function savePlan(p) { try { sessionStorage.setItem(PKEY, JSON.stringify(p)); } catch (_) {} }
+  function clearPlan() { try { sessionStorage.removeItem(PKEY); sessionStorage.removeItem(RKEY); } catch (_) {} }
+  function persistRecs() { try { sessionStorage.setItem(RKEY, JSON.stringify(records())); return true; } catch (_) { return false; } }
+  function rehydrateRecs() {
+    try { const a = JSON.parse(sessionStorage.getItem(RKEY) || '[]');
+      for (const r of a) if (r && r.id && !tweets.has(r.id)) tweets.set(r.id, r); } catch (_) {}
+  }
+  function gotoLeg(p, idx) {                    // set the leg's clock, save state, navigate to its search
+    p.idx = idx; p.active = true;
+    p.legDeadline = Date.now() + p.legs[idx].mins * 60000;
+    if (!persistRecs()) status('parlay: capture set too big to carry — export soon');
+    savePlan(p);
+    location.href = 'https://x.com/search?q=' + encodeURIComponent(p.legs[idx].q) + '&src=typed_query';
+  }
+  function startParlay() {
+    const legs = parlayLegs
+      .filter((l) => String(l.q).trim() && parseFloat(l.mins) > 0)
+      .map((l) => ({ q: String(l.q).trim(), mins: parseFloat(l.mins) }));
+    if (!legs.length) return status('parlay: add a leg (term + minutes)');
+    gotoLeg({ legs: legs, idx: 0, active: true, legDeadline: 0 }, 0);   // carries current captures in
+  }
+  function advanceParlay(p) {
+    stopAuto(); persistRecs();
+    const next = p.idx + 1;
+    if (next >= p.legs.length) return finishParlay();
+    gotoLeg(p, next);
+  }
+  function finishParlay() {
+    if (parlayTimer) { clearInterval(parlayTimer); parlayTimer = null; }
+    stopAuto(); clearPlan(); parlayActive = false; renderParlay();
+    status(`parlay done · ${tweets.size} posts — export when ready`);
+  }
+  function stopParlay() {
+    if (parlayTimer) { clearInterval(parlayTimer); parlayTimer = null; }
+    stopAuto(); clearPlan(); parlayActive = false; renderParlay();
+    status(`parlay stopped · ${tweets.size} posts`);
+  }
+  function startParlayRun(p) {                  // called on load once we're on a leg's search page
+    parlayActive = true;
+    const box = panel && panel.querySelector('#ag-parlay'); if (box) box.style.display = 'block';
+    renderParlay();
+    autoMins = ''; startAuto();                 // parlay owns the timing; leg-scoped autoscroll
+    if (parlayTimer) clearInterval(parlayTimer);
+    let n = 0;
+    parlayTimer = setInterval(() => {
+      const cur = loadPlan();
+      if (!cur || !cur.active) { clearInterval(parlayTimer); parlayTimer = null; return; }
+      const left = cur.legDeadline - Date.now();
+      status(`parlay ${cur.idx + 1}/${cur.legs.length} · "${cur.legs[cur.idx].q}" · ${Math.max(0, Math.ceil(left / 1000))}s · ${tweets.size} posts`);
+      if (++n % 3 === 0) persistRecs();          // ~every 3s: survive a manual mid-leg reload
+      if (left <= 0) { clearInterval(parlayTimer); parlayTimer = null; advanceParlay(cur); }
+    }, 1000);
+  }
+  function resumeParlay() {                      // run once per page load
+    const p = loadPlan();
+    if (!p || !p.active) return;
+    rehydrateRecs(); render();
+    if (p.idx >= p.legs.length) return finishParlay();
+    if (!p.legDeadline || p.legDeadline <= Date.now()) return advanceParlay(p);  // leg elapsed while away
+    startParlayRun(p);
+  }
+  function renderParlay() {
+    const box = panel && panel.querySelector('#ag-parlay');
+    if (!box || box.style.display === 'none') return;
+    const wrap = box.querySelector('#ag-parlay-legs');
+    const startBtn = box.querySelector('#ag-parlay-start');
+    const addBtn = box.querySelector('#ag-parlay-add');
+    const plan = loadPlan();
+    const running = !!(plan && plan.active);
+    if (running) {                              // read-only view of the chain in flight
+      wrap.innerHTML = plan.legs.map((l, i) =>
+        `<div style="padding:3px 0;color:${i === plan.idx ? '#1d9bf0' : '#8899a6'}">` +
+        `${i === plan.idx ? '▶' : '·'} ${esc(l.q)} · ${l.mins}m</div>`).join('');
+      addBtn.style.display = 'none';
+      startBtn.textContent = 'Stop parlay'; startBtn.style.background = '#f4212e';
+    } else {                                     // editable draft: term + minutes per leg
+      wrap.innerHTML = parlayLegs.map((l, i) =>
+        `<div style="display:flex;gap:4px;margin-bottom:4px" data-i="${i}">` +
+        `<input class="ag-pl-q" placeholder="search term" value="${esc(l.q)}" ` +
+        `style="flex:1;min-width:0;background:#0f151a;color:#e7e9ea;border:1px solid #38444d;border-radius:8px;padding:4px 6px;font:11px system-ui">` +
+        `<input class="ag-pl-m" type="number" min="0" step="0.5" placeholder="min" value="${esc(l.mins)}" ` +
+        `style="width:38px;background:#0f151a;color:#e7e9ea;border:1px solid #38444d;border-radius:8px;padding:4px 4px;font:11px system-ui;text-align:center">` +
+        `<button class="ag-pl-x" title="remove leg" style="background:#38444d;color:#fff;border:0;border-radius:8px;padding:0 8px;cursor:pointer;font:12px system-ui">×</button></div>`).join('');
+      addBtn.style.display = '';
+      startBtn.textContent = 'Start parlay'; startBtn.style.background = '#00ba7c';
+      wrap.querySelectorAll('[data-i]').forEach((row) => {   // update model on input; no re-render → focus survives
+        const i = +row.getAttribute('data-i');
+        row.querySelector('.ag-pl-q').oninput = (e) => { parlayLegs[i].q = e.target.value; };
+        row.querySelector('.ag-pl-m').oninput = (e) => { parlayLegs[i].mins = e.target.value; };
+        row.querySelector('.ag-pl-x').onclick = () => { parlayLegs.splice(i, 1); if (!parlayLegs.length) parlayLegs.push({ q: '', mins: '' }); renderParlay(); };
+      });
+    }
   }
   function render() {
     if (!panel) return;
@@ -229,7 +355,7 @@
     p.style.cssText =
       'position:fixed;bottom:16px;right:16px;z-index:2147483647;font:12px/1.4 system-ui,sans-serif;' +
       'background:#15202b;color:#e7e9ea;border:1px solid #38444d;border-radius:14px;padding:10px 12px;' +
-      'box-shadow:0 6px 24px rgba(0,0,0,.5);width:230px';
+      'box-shadow:0 6px 24px rgba(0,0,0,.5);width:230px;max-height:calc(100vh - 32px);overflow:auto';
     p.innerHTML =
       '<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">' +
       '<span style="width:9px;height:9px;border-radius:50%;background:#1d9bf0;display:inline-block"></span>' +
@@ -246,8 +372,23 @@
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
       '<button id="ag-jsonl">JSONL</button><button id="ag-csv">CSV</button>' +
       '<button id="ag-md">Markdown</button><button id="ag-copy">Copy</button>' +
-      '<button id="ag-preview-btn">Preview</button><button id="ag-clear">Clear</button></div>' +
-      '<div id="ag-preview" style="display:none;margin-top:8px;max-height:170px;overflow:auto"></div>';
+      '<button id="ag-preview-btn">Preview</button><button id="ag-parlay-btn">Parlay</button>' +
+      '<button id="ag-clear" style="grid-column:1/3">Clear</button></div>' +
+      '<div id="ag-parlay" style="display:none;margin-top:8px;border-top:1px solid #22303c;padding-top:8px">' +
+      '<div style="color:#8899a6;font-size:10px;margin-bottom:6px">chain of searches — each runs for its minutes, then the next</div>' +
+      '<div id="ag-parlay-legs"></div>' +
+      '<div style="display:flex;gap:6px;margin-top:4px">' +
+      '<button id="ag-parlay-add" style="flex:1;background:#38444d">+ Add leg</button>' +
+      '<button id="ag-parlay-start" style="flex:1;background:#00ba7c">Start parlay</button></div></div>' +
+      '<div id="ag-preview" style="display:none;margin-top:8px">' +
+      '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+      '<input id="ag-pv-search" type="text" placeholder="filter captured · Go X to search" ' +
+      'title="type to filter what you captured; Enter or Go X runs it as a search on X" ' +
+      'style="flex:1;min-width:0;background:#0f151a;color:#e7e9ea;border:1px solid #38444d;' +
+      'border-radius:8px;padding:5px 7px;font:11px system-ui">' +
+      '<button id="ag-pv-gox" title="run this search on X">Go X</button></div>' +
+      '<div id="ag-pv-count" style="color:#8899a6;font-size:10px;margin-bottom:4px"></div>' +
+      '<div id="ag-pv-list" style="max-height:150px;overflow:auto"></div></div>';
     p.querySelectorAll('button').forEach((b) => (b.style.cssText =
       'background:#1d9bf0;color:#fff;border:0;border-radius:9999px;padding:6px 8px;cursor:pointer;font:11px system-ui;font-weight:700'));
     p.querySelector('#ag-clear').style.background = '#38444d';
@@ -262,11 +403,20 @@
     ti.value = autoMins;                       // restore across SPA panel rebuilds
     ti.oninput = () => { autoMins = ti.value; };
     p.querySelector('#ag-preview-btn').onclick = () => { const pv = panel.querySelector('#ag-preview'); pv.style.display = pv.style.display === 'none' ? 'block' : 'none'; renderPreview(); };
-    p.querySelector('#ag-clear').onclick = () => { stopAuto(); tweets.clear(); captures = 0; autoLastSize = 0; render(); status('cleared'); };
+    const sx = p.querySelector('#ag-pv-search');
+    sx.value = pvFilter;                       // restore across SPA panel rebuilds
+    sx.oninput = () => { pvFilter = sx.value; renderPreview(); };
+    sx.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); runOnX(sx.value); } };
+    p.querySelector('#ag-pv-gox').onclick = () => runOnX(sx.value);
+    p.querySelector('#ag-parlay-btn').onclick = () => { const b = panel.querySelector('#ag-parlay'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; renderParlay(); };
+    p.querySelector('#ag-parlay-add').onclick = () => { parlayLegs.push({ q: '', mins: '' }); renderParlay(); };
+    p.querySelector('#ag-parlay-start').onclick = () => { (loadPlan() || {}).active ? stopParlay() : startParlay(); };
+    p.querySelector('#ag-clear').onclick = () => { if ((loadPlan() || {}).active) stopParlay(); stopAuto(); tweets.clear(); captures = 0; autoLastSize = 0; pvFilter = ''; sx.value = ''; render(); status('cleared'); };
     updateAutoBtn(!!autoTimer);
     render();
   }
   build();
+  resumeParlay();   // if a parlay was mid-chain before this navigation, pick it back up
   // X is an SPA — if the panel node ever gets torn out, put it back.
   setInterval(() => { if (!document.getElementById('apigod-panel')) { panel = null; build(); } }, 2000);
 })();

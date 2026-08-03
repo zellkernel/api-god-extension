@@ -61,6 +61,26 @@ dry. Either way it stops on its own once no new posts arrive. Leaving it running
 automated pagination; whether that fits your use of X is the operator's call (see
 **Scope**).
 
+### Preview, filter, and search
+
+**Preview** opens a live pane of what you've captured. Type in its box to **filter** the
+captured set (matches handle, name, or text); press **Enter** or **Go X** to run that text
+as a search on X instead. Running it on X is a full navigation on purpose — it reloads the
+page so `inject.js` re-patches `fetch` at `document_start` before X's bundle grabs its own
+reference, which is the cleanest capture path.
+
+### Parlay (optional)
+
+**Parlay** runs a chain of searches back-to-back, each for a duration you set — e.g.
+`cats` for 1 min, then `dogs` for 3 min, then `birds` for 5 min. Add legs (term +
+minutes), press **Start parlay**, and it navigates to each search in turn, autoscrolls for
+that leg's minutes, and moves on; every leg's posts accumulate into one deduped set you
+export at the end. Because each leg reloads the page, the plan and the captured records are
+parked in the page's own `sessionStorage` (a standard web API, x.com-scoped, local only, no
+extra permission) so they survive the reloads; the run is discarded on **Stop parlay**,
+**Clear**, or closing the tab. Like autoscroll, a parlay is automated pagination — the
+operator's call (see **Scope**).
+
 ## Scope
 
 Runs under your own account and session, over your own view — the same posts the page
